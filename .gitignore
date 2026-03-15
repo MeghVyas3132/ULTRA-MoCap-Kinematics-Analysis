@@ -1,0 +1,7 @@
+# Local datasets (do not commit)
+Dataset/
+Code-base/MocapDatasetScripting_REALLAB/datasets/
+Code-base/MocapDatasetScripting_REALLAB/results/
+
+# OS files
+.DS_Store
