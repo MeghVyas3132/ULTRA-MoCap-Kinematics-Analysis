@@ -687,8 +687,8 @@ def evaluate_model(
 # ============================================================
 # 9. Training Setup & LOSO Loop
 # ============================================================
-num_epochs = 100
-patience = 10
+num_epochs = 30
+patience = 6
 batch_size = 128
 window_length = 200
 window_overlap = 0
