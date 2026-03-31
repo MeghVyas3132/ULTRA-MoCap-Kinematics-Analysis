@@ -1,77 +1,79 @@
 # ULTra MoCap Processing
 
-> Scripts, notebooks, and media assets
+This folder contains training, preprocessing, visualization, and experiment artifacts for ULTRA-MoCap movement classification.
 
----
+## Project Layout
 
-## 📹 Media Gallery
+- `scripts/training/conv1d_bigru_loso.py`
+	- Main LOSO training script.
+	- Supports `emg`, `imu`, `imu_emg` modalities.
+	- Includes `EMG_MODEL_VARIANT` (`convbigru` or `lstm_msa`).
 
-### 🔍 Diagrams
+- `scripts/training/personalized_validation.py`
+	- Personalized/adaptation validation workflow.
 
-| ![Movement Diagram](media/movement_diagram.png) |
-|:--:|
-| **Movement Diagram** — High-level schematic of task types |
+- `scripts/visualization/visualize_subject_distribution.py`
+	- Subject-level distribution plots.
 
----
+- `scripts/visualization/visualize_speed_distributions.py`
+	- Speed distribution plots.
 
-### 🎞️ Movement Videos
+- `processing/`
+	- Data preparation scripts/notebooks.
 
-| Arm Swing | Cross Body Reach | Elbow Flexion |
-|-----------|------------------|----------------|
-| <img src="media/armswing.gif" width="200"/> | <img src="media/crossbody.gif" width="200"/> | <img src="media/elbowflex.gif" width="200"/> |
+- `datasets/`
+	- Pre-sharded LOSO train/test windows.
 
-| Overhead Reach | Shoulder Rotation |
-|----------------|-------------------|
-| <img src="media/overheadreach.gif" width="200"/> | <img src="media/shoulderrotation.gif" width="200"/> |
----
+- `results/Results_ConvBiGRU/`
+	- Per-fold model checkpoints and benchmark CSV outputs.
 
-## 📂 Processing Scripts
+- `docs/reports/ConvBiGRU_Summary_Report.pdf`
+	- Generated report artifact.
 
-### [`batch_IK.ipynb`](processing/batch_IK.ipynb) 
-Performs batch processing for OpenSim inverse kinematics (IK).
+- `media/`
+	- Figures and GIFs used for documentation.
 
-- Data loading and transformation  
-- IK model execution  
-- Result visualization
+## Backward Compatibility
 
----
+The original root-level script names are preserved as launcher wrappers:
 
-### [`batch_processH5.py`](processing/batch_processH5.py)   
-Combines all subject HDF5 files into a single file.
+- `Conv1D-Bi-GRU_Implementation.py`
+- `Personalized_validation.py`
+- `visualize_subject_distribution.py`
+- `visualize_speed_distributions.py`
 
-- Reads from multiple `.h5` datasets  
-- Cleans and validates data  
-- Merges into a unified structure
+They forward execution to the new files in `scripts/`.
 
----
+## Run Commands
 
-### [`clean_sensors.py`](processing/clean_sensors.py)
-Cleans raw sensor `.csv` files by removing unused channels.
+From workspace root (`/Users/meghvyas/Desktop/research-paper`):
 
-- Remove unused sensor channels
+```bash
+# Full LOSO (all modalities, default settings)
+/Users/meghvyas/Desktop/research-paper/.venv/bin/python \
+	Code-base/MocapDatasetScripting_REALLAB/scripts/training/conv1d_bigru_loso.py
 
----
+# Quick one-fold smoke test
+SMOKE_TEST_SUBJECT=subject_1 NUM_EPOCHS=1 BATCH_SIZE=64 \
+	/Users/meghvyas/Desktop/research-paper/.venv/bin/python \
+	Code-base/MocapDatasetScripting_REALLAB/scripts/training/conv1d_bigru_loso.py
 
-### [`movement_type_classifier.ipynb`](processing/movement_type_classifier.ipynb) 
-Trains a classifier to predict movement types from time-series sensor data.
+# EMG-only smoke test for fast iteration
+SMOKE_TEST_SUBJECT=subject_1 MODALITIES=emg NUM_EPOCHS=1 BATCH_SIZE=64 \
+	/Users/meghvyas/Desktop/research-paper/.venv/bin/python \
+	Code-base/MocapDatasetScripting_REALLAB/scripts/training/conv1d_bigru_loso.py
+```
 
-- Feature extraction  
-- Model training and evaluation  
-- Accuracy and confusion matrix analysis
+## Benchmark Outputs
 
----
+Key outputs are written to `results/Results_ConvBiGRU/`:
 
-### [`visualize_subject_distributions.py`](processing/visualize_subject_distributions.py)  
-Analyzes subject demographics.
+- `Crossval_results_EMGOnly_ConvBiGRU.csv` (baseline EMG)
+- `Crossval_results_EMGOnly_LSTM_MSA.csv` (current EMG variant)
+- `Crossval_results_IMUOnly_ConvBiGRU.csv`
+- `Crossval_results_IMU_EMG_ConvBiGRU.csv`
+- `Crossval_results_combined_EMG_lstm_msa.csv`
+- `EMG_baseline_vs_lstm_msa_by_subject.csv`
+- `EMG_baseline_vs_lstm_msa_summary.csv`
 
-- Height  
-- Age  
-- Weight
-
----
-
-### [`visualize_speed_distributions.py`](processing/visualize_speed_distributions.py) 
-Plots joint angular speeds to analyze movement profiles.
-
-- Speed histograms  
-- Joint-specific movement trends
+The EMG comparison CSVs are automatically generated at the end of the training script.
