@@ -56,6 +56,13 @@ from sklearn.metrics import (
     precision_recall_fscore_support,
 )
 
+# Try to import EMG improvements module for advanced models
+try:
+    from emg_improvements import EMGConformer, DualBranchEMG
+    EMG_IMPROVEMENTS_AVAILABLE = True
+except ImportError:
+    EMG_IMPROVEMENTS_AVAILABLE = False
+
 # ============================================================
 # 2. Reproducibility
 # ============================================================
@@ -963,7 +970,7 @@ def evaluate_model(
                 ).to(device)  # [B,T,C_emg]
                 emg_feat = emg_feat.to(device)
                 labels = labels.to(device).argmax(dim=1)
-                outputs = model(emg_proc, emg_feat)
+                outputs = forward_emg_model(model, emg_proc, emg_feat)
 
             elif modality == "imu":
                 imu_acc, imu_gyr, _, _, _, labels = batch
@@ -1054,8 +1061,9 @@ num_classes = len(MOVEMENT_TYPES)
 num_emg_channels = len(config.channels_emg)
 num_imu_sensors = len(config.channels_imu_acc) // 3    # kept for compatibility
 
-# EMG model options: "convbigru" or "lstm_msa"
+# EMG model options: "convbigru", "lstm_msa", "conformer", "dual_branch"
 EMG_MODEL_VARIANT = "lstm_msa"
+VALID_EMG_MODEL_VARIANTS = {"convbigru", "lstm_msa", "conformer", "dual_branch"}
 
 # EMG-targeted defaults (kept separate so IMU/IMU+EMG behavior remains stable)
 EMG_D_MODEL = 128
@@ -1099,6 +1107,19 @@ if os.getenv("WINDOW_OVERLAP") is not None:
     window_overlap = int(os.getenv("WINDOW_OVERLAP"))
 if os.getenv("EMG_MODEL_VARIANT") is not None:
     EMG_MODEL_VARIANT = os.getenv("EMG_MODEL_VARIANT", "lstm_msa").strip().lower()
+if EMG_MODEL_VARIANT == "lstm":
+    EMG_MODEL_VARIANT = "lstm_msa"
+if EMG_MODEL_VARIANT not in VALID_EMG_MODEL_VARIANTS:
+    print(
+        f"⚠️ Unsupported EMG_MODEL_VARIANT='{EMG_MODEL_VARIANT}'. "
+        "Falling back to 'convbigru'."
+    )
+    EMG_MODEL_VARIANT = "convbigru"
+if EMG_MODEL_VARIANT in {"conformer", "dual_branch"} and not EMG_IMPROVEMENTS_AVAILABLE:
+    raise RuntimeError(
+        "EMG_MODEL_VARIANT requires emg_improvements.py (EMGConformer/DualBranchEMG), "
+        "but it could not be imported."
+    )
 if os.getenv("EMG_D_MODEL") is not None:
     EMG_D_MODEL = int(os.getenv("EMG_D_MODEL"))
 if os.getenv("EMG_DROPOUT") is not None:
@@ -1193,7 +1214,15 @@ print(
     },
 )
 
-csv_emg = os.path.join(results_folder, "Crossval_results_EMGOnly_ConvBiGRU.csv")
+baseline_emg_csv = os.path.join(results_folder, "Crossval_results_EMGOnly_ConvBiGRU.csv")
+if EMG_MODEL_VARIANT == "lstm_msa":
+    csv_emg = os.path.join(results_folder, "Crossval_results_EMGOnly_LSTM_MSA.csv")
+elif EMG_MODEL_VARIANT == "conformer":
+    csv_emg = os.path.join(results_folder, "Crossval_results_EMGOnly_Conformer.csv")
+elif EMG_MODEL_VARIANT == "dual_branch":
+    csv_emg = os.path.join(results_folder, "Crossval_results_EMGOnly_DualBranch.csv")
+else:
+    csv_emg = baseline_emg_csv
 csv_imu = os.path.join(results_folder, "Crossval_results_IMUOnly_ConvBiGRU.csv")
 csv_imu_emg = os.path.join(results_folder, "Crossval_results_IMU_EMG_ConvBiGRU.csv")
 csv_combined = os.path.join(
@@ -1210,17 +1239,19 @@ def format_lr_for_debug(lr_value):
     mantissa, exponent = f"{lr_value:.0e}".split("e")
     return f"{mantissa}e{int(exponent)}"
 
+
+def forward_emg_model(model, emg_proc, emg_feat):
+    """Dispatch EMG forward pass based on the selected EMG variant."""
+    if EMG_MODEL_VARIANT == "conformer":
+        return model(emg_proc)
+    return model(emg_proc, emg_feat)
+
 if RESULT_TAG:
     csv_emg = tagged_path(csv_emg, RESULT_TAG)
     csv_imu = tagged_path(csv_imu, RESULT_TAG)
     csv_imu_emg = tagged_path(csv_imu_emg, RESULT_TAG)
     csv_combined = tagged_path(csv_combined, RESULT_TAG)
     print(f"Results tag enabled: {RESULT_TAG}")
-
-if EMG_MODEL_VARIANT == "lstm_msa":
-    csv_emg = os.path.join(results_folder, "Crossval_results_EMGOnly_LSTM_MSA.csv")
-    if RESULT_TAG:
-        csv_emg = tagged_path(csv_emg, RESULT_TAG)
 
 rows_emg, rows_imu, rows_imu_emg, rows_combined = [], [], [], []
 
@@ -1341,6 +1372,22 @@ for i, test_subject in enumerate(eval_subjects):
                     lstm_hidden=EMG_LSTM_HIDDEN,
                     dropout=EMG_DROPOUT,
                 ).to(device)
+            elif EMG_MODEL_VARIANT == "conformer":
+                model = EMGConformer(
+                    n_channels=num_emg_channels,
+                    n_classes=num_classes,
+                    d_model=EMG_D_MODEL,
+                    dropout=EMG_DROPOUT,
+                ).to(device)
+            elif EMG_MODEL_VARIANT == "dual_branch":
+                model = DualBranchEMG(
+                    n_channels=num_emg_channels,
+                    n_classes=num_classes,
+                    d_model=EMG_D_MODEL,
+                    n_handcraft_features=num_emg_channels * 4,
+                    use_conformer=True,
+                    dropout=EMG_DROPOUT,
+                ).to(device)
             else:
                 model = EMGConvBiGRUModel(
                     num_emg_channels=num_emg_channels,
@@ -1431,7 +1478,7 @@ for i, test_subject in enumerate(eval_subjects):
                     ).to(device)  # [B,T,C_emg]
                     emg_feat = emg_feat.to(device)
                     labels = labels.to(device).argmax(dim=1)
-                    outputs = model(emg_proc, emg_feat)
+                    outputs = forward_emg_model(model, emg_proc, emg_feat)
 
                 elif modality == "imu":
                     imu_acc, imu_gyr, _, _, _, labels = batch
@@ -1485,7 +1532,7 @@ for i, test_subject in enumerate(eval_subjects):
                         ).to(device)
                         emg_feat = emg_feat.to(device)
                         labels = labels.to(device).argmax(dim=1)
-                        outputs = model(emg_proc, emg_feat)
+                        outputs = forward_emg_model(model, emg_proc, emg_feat)
 
                     elif modality == "imu":
                         imu_acc, imu_gyr, _, _, _, labels = batch
@@ -1733,9 +1780,18 @@ def summarize_emg_variant_vs_baseline(
     print(f"📄 Summary comparison saved: {comparison_summary_csv}")
 
 
-summarize_emg_variant_vs_baseline(
-    results_folder,
-    csv_emg,
-    os.path.join(results_folder, "Crossval_results_EMGOnly_ConvBiGRU.csv"),
-    result_tag=RESULT_TAG,
-)
+comparison_baseline_csv = baseline_emg_csv
+if RESULT_TAG:
+    tagged_baseline_csv = tagged_path(baseline_emg_csv, RESULT_TAG)
+    if os.path.exists(tagged_baseline_csv):
+        comparison_baseline_csv = tagged_baseline_csv
+
+if EMG_MODEL_VARIANT == "convbigru":
+    print("ℹ️ EMG variant is ConvBiGRU baseline; skipping baseline-vs-current summary.")
+else:
+    summarize_emg_variant_vs_baseline(
+        results_folder,
+        csv_emg,
+        comparison_baseline_csv,
+        result_tag=RESULT_TAG,
+    )

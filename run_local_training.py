@@ -2,6 +2,8 @@
 """
 Local EMG Training with Live Logs
 Run with: python run_local_training.py
+
+This runner launches the main, maintained LOSO script directly.
 """
 
 import os
@@ -19,9 +21,10 @@ H5_PATH = str(REPO_DIR / 'Dataset' / 'ULTra-MoCap-processed' / 'All_subjects_dat
 RESULTS_DIR = str(REPO_DIR / 'Code-base' / 'MocapDatasetScripting_REALLAB' / 'results')
 
 # Training settings
-EMG_MODEL_VARIANT = 'conformer'  # conformer, dual_branch, lstm
-EMG_EPOCHS = 50
-MAX_FOLDS = 0  # 0 = all 13, or 1-3 for testing
+# Supported variants: convbigru, lstm_msa, conformer, dual_branch
+EMG_MODEL_VARIANT = os.getenv('EMG_MODEL_VARIANT', 'conformer')
+EMG_EPOCHS = int(os.getenv('EMG_EPOCHS', '50'))
+MAX_FOLDS = int(os.getenv('MAX_FOLDS', '0'))  # 0 = all 13, or 1-3 for testing
 
 print("="*70)
 print("🚀 LOCAL EMG TRAINING - LIVE LOGS")
@@ -39,7 +42,7 @@ if not Path(H5_PATH).exists():
     sys.exit(1)
 
 # Find training script
-training_script = REPO_DIR / 'Code-base' / 'MocapDatasetScripting_REALLAB' / 'scripts' / 'training' / 'run_emg_colab.py'
+training_script = REPO_DIR / 'Code-base' / 'MocapDatasetScripting_REALLAB' / 'scripts' / 'training' / 'conv1d_bigru_loso.py'
 if not training_script.exists():
     print(f"❌ ERROR: Training script not found: {training_script}")
     sys.exit(1)
@@ -54,6 +57,7 @@ env.update({
     'EMG_EPOCHS': str(EMG_EPOCHS),
     'EMG_MODEL_VARIANT': EMG_MODEL_VARIANT,
     'MODALITIES': 'emg',
+    'DATALOADER_WORKERS': env.get('DATALOADER_WORKERS', '0'),
     'PYTHONUNBUFFERED': '1',  # Immediate output
 })
 

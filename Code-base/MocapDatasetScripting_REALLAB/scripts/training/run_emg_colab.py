@@ -45,7 +45,7 @@ print("\n" + "="*70)
 print("LAUNCHING TRAINING...")
 print("="*70 + "\n")
 
-# Import and run the improved training script
+# Import and run the training script
 try:
     # Use improved script if EMG_MODEL_VARIANT is conformer or dual_branch
     use_improved = EMG_MODEL_VARIANT.lower() in ['conformer', 'dual_branch']
@@ -65,17 +65,29 @@ try:
         if use_improved:
             print("⚠️ Falling back to standard script...")
             script_path = os.path.join(os.path.dirname(__file__), 'conv1d_bigru_loso.py')
+            use_improved = False
     
-    # Set sys.argv for the script
-    old_argv = sys.argv
-    sys.argv = [script_name]
-    
-    try:
-        with open(script_path, 'r') as f:
-            code = f.read()
-        exec(code, {'__name__': '__main__', '__file__': script_path})
-    finally:
-        sys.argv = old_argv
+    # For improved script, we need to run it as a subprocess to properly override model creation
+    # The exec() approach doesn't work because the improved script uses "from conv1d_bigru_loso import *"
+    # which causes namespace conflicts
+    if use_improved:
+        import subprocess
+        result = subprocess.run([sys.executable, script_path], cwd=os.path.dirname(script_path))
+        if result.returncode != 0:
+            print(f"\n⚠️ Improved script failed with code {result.returncode}")
+            print("This is expected - improved script needs to be run directly")
+            sys.exit(result.returncode)
+    else:
+        # Standard script can be exec'd
+        old_argv = sys.argv
+        sys.argv = [script_name]
+        
+        try:
+            with open(script_path, 'r') as f:
+                code = f.read()
+            exec(code, {'__name__': '__main__', '__file__': script_path})
+        finally:
+            sys.argv = old_argv
         
 except Exception as e:
     print(f"\n❌ ERROR during training: {e}")
