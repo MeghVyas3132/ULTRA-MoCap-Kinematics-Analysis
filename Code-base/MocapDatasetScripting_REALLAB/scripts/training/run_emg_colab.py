@@ -45,19 +45,30 @@ print("\n" + "="*70)
 print("LAUNCHING TRAINING...")
 print("="*70 + "\n")
 
-# Import and run conv1d_bigru_loso
+# Import and run the improved training script
 try:
-    # The conv1d_bigru_loso.py script is designed to be run as main
-    # We'll execute it using exec to run it in this process
-    script_path = os.path.join(os.path.dirname(__file__), 'conv1d_bigru_loso.py')
+    # Use improved script if EMG_MODEL_VARIANT is conformer or dual_branch
+    use_improved = EMG_MODEL_VARIANT.lower() in ['conformer', 'dual_branch']
+    
+    if use_improved:
+        script_name = 'conv1d_bigru_loso_improved.py'
+        print(f"✓ Using IMPROVED training script for {EMG_MODEL_VARIANT} model\n")
+    else:
+        script_name = 'conv1d_bigru_loso.py'
+        print(f"✓ Using standard training script for {EMG_MODEL_VARIANT} model\n")
+    
+    script_path = os.path.join(os.path.dirname(__file__), script_name)
     
     if not os.path.exists(script_path):
         print(f"❌ ERROR: Training script not found: {script_path}")
-        sys.exit(1)
+        # Fall back to standard script
+        if use_improved:
+            print("⚠️ Falling back to standard script...")
+            script_path = os.path.join(os.path.dirname(__file__), 'conv1d_bigru_loso.py')
     
     # Set sys.argv for the script
     old_argv = sys.argv
-    sys.argv = ['conv1d_bigru_loso.py']
+    sys.argv = [script_name]
     
     try:
         with open(script_path, 'r') as f:
